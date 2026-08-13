@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 便签</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --dim: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --wwd: #58a6ff;
+      --wwdb: #d29922;
+      --newdb: #bc8cff;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+    .header h1 { font-size: 17px; font-weight: 600; white-space: nowrap; }
+    .status {
+      font-size: 12px; color: var(--dim);
+      display: flex; align-items: center; gap: 6px;
+      flex: 1; justify-content: center;
+    }
+    .status .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green); flex-shrink: 0;
+    }
+    .status.saving .dot { background: var(--yellow); animation: pulse 1s infinite; }
+    .status.error .dot { background: var(--red); }
+    .status.unsaved .dot { background: var(--dim); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .icon-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--dim); cursor: pointer;
+      font-size: 15px; padding: 4px 10px;
+      border-radius: 6px; white-space: nowrap;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--dim); }
+    .container { max-width: 1100px; margin: 0 auto; padding: 12px; }
+    .section { margin-bottom: 20px; }
+    .section-title {
+      font-size: 13px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px; padding-left: 10px;
+      border-left: 3px solid;
+    }
+    .section.wwd .section-title { border-color: var(--wwd); color: var(--wwd); }
+    .section.wwdb .section-title { border-color: var(--wwdb); color: var(--wwdb); }
+    .section.newdb .section-title { border-color: var(--newdb); color: var(--newdb); }
+    .row {
+      display: flex; align-items: stretch; gap: 6px;
+      margin-bottom: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px;
+    }
+    .row-label {
+      flex-shrink: 0; width: 52px;
+      font-size: 11px; font-weight: 700;
+      color: var(--dim);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .row.wwd .row-label { color: var(--wwd); }
+    .row.wwdb .row-label { color: var(--wwdb); }
+    .row.newdb .row-label { color: var(--newdb); }
+    .inputs {
+      flex: 1; display: grid;
+      grid-template-columns: 3fr 2.2fr 0.8fr 2.5fr;
+      gap: 4px;
+    }
+    .input-wrap { position: relative; display: flex; }
+    .input-wrap input {
+      background: var(--bg); border: 1px solid transparent;
+      color: var(--text); padding: 5px 8px;
+      border-radius: 4px; font-size: 13px;
+      outline: none; width: 100%; min-width: 0;
+      transition: border-color .15s;
+    }
+    .input-wrap input:focus { border-color: var(--accent); }
+    .input-wrap input.col-link { color: var(--accent); }
+    .input-wrap input::placeholder { color: var(--dim); opacity: 0.5; }
+    .open-link {
+      position: absolute; right: 4px; top: 50%;
+      transform: translateY(-50%);
+      background: var(--surface2); border: none;
+      color: var(--accent); cursor: pointer;
+      font-size: 12px; padding: 2px 5px;
+      border-radius: 3px; display: none;
+    }
+    .input-wrap input:not(:focus) ~ .open-link.has-url { display: block; }
+    @media (max-width: 700px) {
+      .row { flex-direction: column; }
+      .row-label { width: 100%; justify-content: flex-start; padding-left: 4px; height: 22px; }
+      .inputs { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 480px) {
+      .inputs { grid-template-columns: 1fr; }
+    }
+    /* Modal */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.75);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 200; padding: 16px;
+    }
+    .overlay.show { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      max-width: 420px; width: 100%;
+    }
+    .modal h2 { font-size: 19px; margin-bottom: 6px; }
+    .modal p { color: var(--dim); font-size: 13px; line-height: 1.7; margin-bottom: 12px; }
+    .modal a { color: var(--accent); }
+    .modal input {
+      width: 100%; background: var(--bg);
+      border: 1px solid var(--border); color: var(--text);
+      padding: 9px 12px; border-radius: 6px;
+      font-size: 14px; outline: none; margin-bottom: 10px;
+    }
+    .modal input:focus { border-color: var(--accent); }
+    .modal button {
+      width: 100%; background: var(--accent); color: #fff;
+      border: none; padding: 10px; border-radius: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .modal button:hover { filter: brightness(1.1); }
+    .modal .hint { font-size: 11px; color: var(--dim); margin-top: 8px; }
+    .err-msg { color: var(--red); font-size: 12px; margin-bottom: 6px; display: none; }
+    .loading-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 50vh; color: var(--dim); font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📋 便签</h1>
+    <div class="status" id="status">
+      <span class="dot"></span><span class="text">加载中...</span>
+    </div>
+    <button class="icon-btn" onclick="forceSave()">💾 保存</button>
+    <button class="icon-btn" onclick="openSetup()">⚙️</button>
+  </div>
+  <div class="container" id="app">
+    <div class="loading-screen">加载中...</div>
+  </div>
+  <div class="overlay" id="setupOverlay">
+    <div class="modal">
+      <h2>🔑 设置 Token</h2>
+      <p>需要一个 GitHub Token（仅 <code>gist</code> 权限）来同步数据。每个浏览器只需输入一次。</p>
+      <p>👉 <a href="https://github.com/settings/tokens/new?scopes=gist&description=StickyNotes" target="_blank">点这里创建</a> → 复制粘贴到下方：</p>
+      <div class="err-msg" id="errMsg"></div>
+      <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off">
+      <button onclick="saveToken()">确认</button>
+      <div class="hint">Token 仅存于本地浏览器，不会上传到任何地方。</div>
+    </div>
+  </div>
+  <script>
+    const GIST_ID = "dd25f3f3146708c665989536b5797f1a";
+    const TOKEN_KEY = "sticky_token_v1";
+    const ROWS = 15, COLS = 4;
+    const GROUPS = [
+      { name: "wwd", start: 0 },
+      { name: "wwdb", start: 5 },
+      { name: "newdb", start: 10 }
+    ];
+    let data = { lines: Array.from({length: ROWS}, () => ["","","",""]) };
+    let saveTimer = null;
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+
+    function openSetup() {
+      document.getElementById("setupOverlay").classList.add("show");
+      setTimeout(() => document.getElementById("tokenInput").focus(), 100);
+    }
+    function closeSetup() { document.getElementById("setupOverlay").classList.remove("show"); }
+
+    function saveToken() {
+      const token = document.getElementById("tokenInput").value.trim();
+      const err = document.getElementById("errMsg");
+      if (!token) { err.textContent = "请输入 Token"; err.style.display = "block"; return; }
+      fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: { Authorization: `token ${token}` } })
+        .then(r => { if (!r.ok) throw new Error("Token 无效或无权限"); return r.json(); })
+        .then(g => {
+          localStorage.setItem(TOKEN_KEY, token);
+          closeSetup();
+          document.getElementById("errMsg").style.display = "none";
+          document.getElementById("tokenInput").value = "";
+          loadFromGist(g);
+        })
+        .catch(e => { err.textContent = "验证失败: " + e.message; err.style.display = "block"; });
+    }
+
+    async function init() {
+      const token = getToken();
+      if (!token) { openSetup(); return; }
+      try {
+        const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, { headers: { Authorization: `token ${token}` } });
+        if (r.status === 401 || r.status === 403) { openSetup(); return; }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        loadFromGist(await r.json());
+      } catch (e) {
+        document.getElementById("app").innerHTML = `<div class="loading-screen">❌ 加载失败: ${e.message}<br><span style="font-size:12px;color:var(--dim)">检查网络或 Token 设置</span></div>`;
+      }
+    }
+
+    function loadFromGist(g) {
+      const f = g.files && g.files["data.json"];
+      if (f && f.content) {
+        try {
+          const p = JSON.parse(f.content);
+          if (p.lines && Array.isArray(p.lines)) {
+            for (let i = 0; i < ROWS; i++) {
+              if (!p.lines[i]) p.lines[i] = ["","","",""];
+              while (p.lines[i].length < COLS) p.lines[i].push("");
+            }
+            data = { lines: p.lines };
+          }
+        } catch(e) { console.error("Parse error:", e); }
+      }
+      render();
+      setStatus("saved");
+    }
+
+    async function saveGist() {
+      const token = getToken();
+      if (!token) { openSetup(); return; }
+      setStatus("saving");
+      try {
+        const r = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: "PATCH",
+          headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: "Sticky Notes Data",
+            files: { "data.json": { content: JSON.stringify({ lines: data.lines }, null, 2) } }
+          })
+        });
+        if (!r.ok) { const e = await r.json(); throw new Error(e.message || "HTTP " + r.status); }
+        setStatus("saved");
+      } catch (e) {
+        setStatus("error", e.message);
+      }
+    }
+
+    function forceSave() { if (saveTimer) clearTimeout(saveTimer); saveGist(); }
+    function debounceSave() {
+      if (saveTimer) clearTimeout(saveTimer);
+      setStatus("unsaved");
+      saveTimer = setTimeout(saveGist, 1500);
+    }
+
+    function setStatus(s, msg) {
+      const el = document.getElementById("status");
+      el.className = "status " + s;
+      const t = el.querySelector(".text");
+      if (s === "saved") t.textContent = "✓ " + new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+      else if (s === "saving") t.textContent = "保存中...";
+      else if (s === "unsaved") t.textContent = "编辑中...";
+      else if (s === "error") t.textContent = "❌ " + (msg||"失败");
+    }
+
+    function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+    function render() {
+      let h = "";
+      for (const g of GROUPS) {
+        h += `<div class="section ${g.name}"><div class="section-title">${g.name.toUpperCase()}</div>`;
+        for (let i = 0; i < 5; i++) {
+          const r = g.start + i;
+          const label = `${g.name}${i+1}`;
+          h += `<div class="row ${g.name}"><div class="row-label">${label}</div><div class="inputs">`;
+          for (let c = 0; c < COLS; c++) {
+            const v = (data.lines[r] && data.lines[r][c]) || "";
+            const ph = c===0?"描述":c===1?"分支":c===2?"备注":"链接";
+            const cls = c===3?"col-link":"";
+            const isUrl = c===3 && v.match(/^https?:\/\//);
+            h += `<div class="input-wrap"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
+            if (c===3) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
+            h += `</div>`;
+          }
+          h += `</div></div>`;
+        }
+        h += `</div>`;
+      }
+      document.getElementById("app").innerHTML = h;
+    }
+
+    function edit(r, c, v) {
+      if (!data.lines[r]) data.lines[r] = ["","","",""];
+      data.lines[r][c] = v;
+      // Update open-link visibility
+      const inputs = document.querySelectorAll(`input[data-r="${r}"][data-c="${c}"]`);
+      if (inputs[0]) {
+        const btn = inputs[0].nextElementSibling;
+        if (btn && btn.classList.contains("open-link")) {
+          btn.classList.toggle("has-url", /^https?:\/\//.test(v));
+          btn.onclick = () => window.open(v, "_blank");
+        }
+      }
+      debounceSave();
+    }
+
+    document.addEventListener("keydown", e => {
+      if ((e.ctrlKey||e.metaKey) && e.key === "s") { e.preventDefault(); forceSave(); }
+    });
+    document.getElementById("tokenInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") saveToken();
+      if (e.key === "Escape") closeSetup();
+    });
+
+    init();
+  </script>
+</body>
+</html>
