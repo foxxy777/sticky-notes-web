@@ -56,7 +56,7 @@
       border-radius: 6px; white-space: nowrap;
     }
     .icon-btn:hover { color: var(--text); border-color: var(--dim); }
-    .container { max-width: 1100px; margin: 0 auto; padding: 12px; }
+    .container { max-width: 1500px; margin: 0 auto; padding: 12px 16px; }
     .section { margin-bottom: 20px; }
     .section-title {
       font-size: 13px; font-weight: 700;
@@ -76,8 +76,8 @@
       padding: 4px;
     }
     .row-label {
-      flex-shrink: 0; width: 52px;
-      font-size: 11px; font-weight: 700;
+      flex-shrink: 0; width: 60px;
+      font-size: 12px; font-weight: 700;
       color: var(--dim);
       display: flex; align-items: center; justify-content: center;
     }
@@ -92,8 +92,8 @@
     .input-wrap { position: relative; display: flex; }
     .input-wrap input {
       background: var(--bg); border: 1px solid transparent;
-      color: var(--text); padding: 5px 8px;
-      border-radius: 4px; font-size: 13px;
+      color: var(--text); padding: 7px 10px;
+      border-radius: 4px; font-size: 14px;
       outline: none; width: 100%; min-width: 0;
       transition: border-color .15s;
     }
@@ -109,10 +109,24 @@
       border-radius: 3px; display: none;
     }
     .input-wrap input:not(:focus) ~ .open-link.has-url { display: block; }
+    /* 可拖拽列宽手柄 */
+    .col-handle {
+      position: absolute; right: -6px; top: 0; bottom: 0;
+      width: 12px; cursor: col-resize; z-index: 5;
+      touch-action: none;
+    }
+    .col-handle::after {
+      content: ""; position: absolute; top: 12%; bottom: 12%; left: 4px; right: 4px;
+      border-radius: 2px; background: var(--border);
+      opacity: 0; transition: opacity .15s, background .15s;
+    }
+    .row:hover .col-handle::after { opacity: .6; }
+    .col-handle:hover::after, .col-handle.dragging::after { opacity: 1; background: var(--accent); }
     @media (max-width: 700px) {
       .row { flex-direction: column; }
       .row-label { width: 100%; justify-content: flex-start; padding-left: 4px; height: 22px; }
       .inputs { grid-template-columns: 1fr 1fr; }
+      .col-handle { display: none; }
     }
     @media (max-width: 480px) {
       .inputs { grid-template-columns: 1fr; }
@@ -183,6 +197,8 @@
   <script>
     const GIST_ID = "dd25f3f3146708c665989536b5797f1a";
     const TOKEN_KEY = "sticky_token_v1";
+    const COLW_KEY = "sticky_colw_v1";
+    const DEF_FR = [3, 2.2, 0.8, 2.5]; // 默认列宽比例
     const ROWS = 15, COLS = 4;
     const GROUPS = [
       { name: "wwd", start: 0 },
@@ -300,6 +316,7 @@
             const cls = c===3?"col-link":"";
             const isUrl = c===3 && v.match(/^https?:\/\//);
             h += `<div class="input-wrap"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
+            if (c < 3) h += `<div class="col-handle" onpointerdown="startDrag(event,${c})" ondblclick="resetCols()" title="拖动调整列宽（双击重置）"></div>`;
             if (c===3) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
             h += `</div>`;
           }
@@ -308,7 +325,70 @@
         h += `</div>`;
       }
       document.getElementById("app").innerHTML = h;
+      applyCols();
     }
+
+    /* ===== 列宽拖拽 ===== */
+    let colW = null; // [w0,w1,w2] px，第4列自动占剩余空间
+    function loadColW() {
+      try {
+        const s = JSON.parse(localStorage.getItem(COLW_KEY));
+        if (Array.isArray(s) && s.length === 3 && s.every(x => typeof x === "number" && x > 0)) colW = s;
+      } catch(e) {}
+    }
+    function defaultColW(W) {
+      const t = DEF_FR[0] + DEF_FR[1] + DEF_FR[2] + DEF_FR[3];
+      const avail = Math.max(W - 24, 240);
+      return [0,1,2].map(i => Math.max(40, Math.round(DEF_FR[i] / t * avail)));
+    }
+    function isMobile() { return window.matchMedia("(max-width: 700px)").matches; }
+    function applyCols() {
+      if (isMobile()) {
+        document.querySelectorAll(".inputs").forEach(el => el.style.gridTemplateColumns = "");
+        return;
+      }
+      document.querySelectorAll(".inputs").forEach(el => {
+        let w = (colW || defaultColW(el.clientWidth)).slice();
+        w = w.map(x => Math.max(40, x));
+        const maxSum = el.clientWidth - 90; // 给第4列留至少 90px
+        const sum = w[0] + w[1] + w[2];
+        if (sum > maxSum) { const k = maxSum / sum; w = w.map(x => Math.floor(x * k)); }
+        el.style.gridTemplateColumns = `${w[0]}px ${w[1]}px ${w[2]}px minmax(90px, 1fr)`;
+      });
+    }
+    function startDrag(e, i) {
+      if (isMobile()) return;
+      e.preventDefault();
+      const grid = e.target.closest(".inputs");
+      if (!colW) colW = defaultColW(grid.clientWidth);
+      else colW = colW.map(x => Math.max(40, x));
+      const startX = e.clientX, start = colW[i];
+      const others = colW.reduce((a, b, j) => a + (j === i ? 0 : b), 0);
+      const maxW = grid.clientWidth - others - 90;
+      const handle = e.target;
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      function mv(ev) {
+        colW[i] = Math.min(Math.max(40, start + (ev.clientX - startX)), maxW);
+        applyCols();
+      }
+      function up() {
+        document.removeEventListener("pointermove", mv);
+        document.removeEventListener("pointerup", up);
+        handle.classList.remove("dragging");
+        document.body.style.cursor = "";
+        localStorage.setItem(COLW_KEY, JSON.stringify(colW));
+      }
+      document.addEventListener("pointermove", mv);
+      document.addEventListener("pointerup", up);
+    }
+    function resetCols() {
+      colW = null;
+      localStorage.removeItem(COLW_KEY);
+      applyCols();
+    }
+    window.addEventListener("resize", applyCols);
+    loadColW();
 
     function edit(r, c, v) {
       if (!data.lines[r]) data.lines[r] = ["","","",""];
