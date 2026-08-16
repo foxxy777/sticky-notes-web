@@ -207,7 +207,7 @@
     const GIST_ID = "dd25f3f3146708c665989536b5797f1a";
     const TOKEN_KEY = "sticky_token_v1";
     const COLW_KEY = "sticky_colw_v1";
-    const DEF_FR = [3, 2.2, 0.8, 2.5]; // 默认列宽比例
+    const DEF_FR = [1.2, 3, 1.5, 1.5]; // 默认列宽比例：时间/内容描述/综合情况/回归情况
     const ROWS = 15, COLS = 4;
     const GROUPS = [
       { name: "wwd", start: 0 },
@@ -321,9 +321,9 @@
           h += `<div class="row ${g.name}"><div class="row-label">${label}</div><div class="inputs">`;
           for (let c = 0; c < COLS; c++) {
             const v = (data.lines[r] && data.lines[r][c]) || "";
-            const ph = c===0?"描述":c===1?"分支":c===2?"备注":"链接";
-            const cls = c===3?"col-link":"";
+            const ph = c===0?"时间":c===1?"内容描述":c===2?"综合情况":"回归情况";
             const isUrl = c===3 && v.match(/^https?:\/\//);
+            const cls = (c===3 && isUrl)?"col-link":"";
             h += `<div class="input-wrap"><div class="input-box"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
             if (c===3) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
             h += `</div><button class="clear-btn" onclick="clearCell(${r},${c})" title="清空此格" tabindex="-1">✕</button>`;
@@ -409,6 +409,7 @@
         const btn = input.nextElementSibling;
         if (btn && btn.classList.contains("open-link")) {
           btn.classList.toggle("has-url", /^https?:\/\//.test(v));
+          input.classList.toggle("col-link", /^https?:\/\//.test(v));
           btn.onclick = () => window.open(v, "_blank");
         }
       }
