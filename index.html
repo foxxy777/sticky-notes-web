@@ -216,6 +216,8 @@
     ];
     let data = { lines: Array.from({length: ROWS}, () => ["","","","",""]) };
     let saveTimer = null;
+    let undoStack = [], redoStack = [];
+    let lastEdit = { r: -1, c: -1, t: 0 };
 
     function getToken() { return localStorage.getItem(TOKEN_KEY); }
 
@@ -266,6 +268,7 @@
               while (p.lines[i].length < COLS) p.lines[i].push("");
             }
             data = { lines: p.lines };
+            undoStack = []; redoStack = []; lastEdit = { r: -1, c: -1, t: 0 };
           }
         } catch(e) { console.error("Parse error:", e); }
       }
@@ -401,8 +404,38 @@
     window.addEventListener("resize", applyCols);
     loadColW();
 
+    /* ===== 撤销/重做 ===== */
+    function pushUndo(r, c) {
+      const now = Date.now();
+      if (undoStack.length && lastEdit.r === r && lastEdit.c === c && now - lastEdit.t < 800) {
+        lastEdit.t = now;
+        return; // 同一格连续输入，合并为一步
+      }
+      undoStack.push(JSON.stringify(data.lines));
+      if (undoStack.length > 200) undoStack.shift();
+      redoStack.length = 0;
+      lastEdit = { r, c, t: now };
+    }
+    function applyState(s) {
+      data.lines = JSON.parse(s);
+      lastEdit = { r: -1, c: -1, t: 0 };
+      render();
+      debounceSave();
+    }
+    function doUndo() {
+      if (!undoStack.length) return;
+      redoStack.push(JSON.stringify(data.lines));
+      applyState(undoStack.pop());
+    }
+    function doRedo() {
+      if (!redoStack.length) return;
+      undoStack.push(JSON.stringify(data.lines));
+      applyState(redoStack.pop());
+    }
+
     function edit(r, c, v) {
       if (!data.lines[r]) data.lines[r] = ["","","","",""];
+      pushUndo(r, c);
       data.lines[r][c] = v;
       // Update open-link visibility
       const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
@@ -419,6 +452,7 @@
 
     function clearCell(r, c) {
       if (!data.lines[r]) data.lines[r] = ["","","","",""];
+      pushUndo(r, c);
       data.lines[r][c] = "";
       const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
       if (input) {
@@ -428,7 +462,13 @@
     }
 
     document.addEventListener("keydown", e => {
-      if ((e.ctrlKey||e.metaKey) && e.key === "s") { e.preventDefault(); forceSave(); }
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === "s") { e.preventDefault(); forceSave(); }
+      if (mod && (e.key.toLowerCase() === "z" || e.code === "KeyZ")) {
+        e.preventDefault();
+        if (e.shiftKey) doRedo(); else doUndo();
+      }
+      if (mod && (e.key.toLowerCase() === "y" || e.code === "KeyY")) { e.preventDefault(); doRedo(); }
     });
     document.getElementById("tokenInput").addEventListener("keydown", e => {
       if (e.key === "Enter") saveToken();
