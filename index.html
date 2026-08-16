@@ -90,6 +90,7 @@
       gap: 4px;
     }
     .input-wrap { position: relative; display: flex; }
+    .input-box { position: relative; flex: 1; min-width: 0; display: flex; }
     .input-wrap input {
       background: var(--bg); border: 1px solid transparent;
       color: var(--text); padding: 7px 10px;
@@ -100,6 +101,14 @@
     .input-wrap input:focus { border-color: var(--accent); }
     .input-wrap input.col-link { color: var(--accent); }
     .input-wrap input::placeholder { color: var(--dim); opacity: 0.5; }
+    .clear-btn {
+      flex-shrink: 0; width: 20px; margin-left: 3px; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: none; border: none; border-radius: 4px;
+      color: var(--dim); opacity: .45; font-size: 12px;
+      cursor: pointer;
+    }
+    .clear-btn:hover { opacity: 1; color: var(--red); }
     .open-link {
       position: absolute; right: 4px; top: 50%;
       transform: translateY(-50%);
@@ -315,9 +324,10 @@
             const ph = c===0?"描述":c===1?"分支":c===2?"备注":"链接";
             const cls = c===3?"col-link":"";
             const isUrl = c===3 && v.match(/^https?:\/\//);
-            h += `<div class="input-wrap"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
-            if (c < 3) h += `<div class="col-handle" onpointerdown="startDrag(event,${c})" ondblclick="resetCols()" title="拖动调整列宽（双击重置）"></div>`;
+            h += `<div class="input-wrap"><div class="input-box"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
             if (c===3) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
+            h += `</div><button class="clear-btn" onclick="clearCell(${r},${c})" title="清空此格" tabindex="-1">✕</button>`;
+            if (c < 3) h += `<div class="col-handle" onpointerdown="startDrag(event,${c})" ondblclick="resetCols()" title="拖动调整列宽（双击重置）"></div>`;
             h += `</div>`;
           }
           h += `</div></div>`;
@@ -394,15 +404,25 @@
       if (!data.lines[r]) data.lines[r] = ["","","",""];
       data.lines[r][c] = v;
       // Update open-link visibility
-      const inputs = document.querySelectorAll(`input[data-r="${r}"][data-c="${c}"]`);
-      if (inputs[0]) {
-        const btn = inputs[0].nextElementSibling;
+      const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
+      if (input) {
+        const btn = input.nextElementSibling;
         if (btn && btn.classList.contains("open-link")) {
           btn.classList.toggle("has-url", /^https?:\/\//.test(v));
           btn.onclick = () => window.open(v, "_blank");
         }
       }
       debounceSave();
+    }
+
+    function clearCell(r, c) {
+      if (!data.lines[r]) data.lines[r] = ["","","",""];
+      data.lines[r][c] = "";
+      const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
+      if (input) {
+        input.value = "";
+        edit(r, c, "");
+      }
     }
 
     document.addEventListener("keydown", e => {
