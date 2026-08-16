@@ -86,7 +86,7 @@
     .row.newdb .row-label { color: var(--newdb); }
     .inputs {
       flex: 1; display: grid;
-      grid-template-columns: 3fr 2.2fr 0.8fr 2.5fr;
+      grid-template-columns: 0.6fr 1.2fr 3fr 1.5fr 1.5fr;
       gap: 4px;
     }
     .input-wrap { position: relative; display: flex; }
@@ -207,14 +207,14 @@
     const GIST_ID = "dd25f3f3146708c665989536b5797f1a";
     const TOKEN_KEY = "sticky_token_v1";
     const COLW_KEY = "sticky_colw_v1";
-    const DEF_FR = [1.2, 3, 1.5, 1.5]; // 默认列宽比例：时间/内容描述/综合情况/回归情况
-    const ROWS = 15, COLS = 4;
+    const DEF_FR = [0.6, 1.2, 3, 1.5, 1.5]; // 默认列宽比例：状态/时间/内容描述/综合情况/回归情况
+    const ROWS = 15, COLS = 5;
     const GROUPS = [
       { name: "wwd", start: 0 },
       { name: "wwdb", start: 5 },
       { name: "newdb", start: 10 }
     ];
-    let data = { lines: Array.from({length: ROWS}, () => ["","","",""]) };
+    let data = { lines: Array.from({length: ROWS}, () => ["","","","",""]) };
     let saveTimer = null;
 
     function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -261,7 +261,8 @@
           const p = JSON.parse(f.content);
           if (p.lines && Array.isArray(p.lines)) {
             for (let i = 0; i < ROWS; i++) {
-              if (!p.lines[i]) p.lines[i] = ["","","",""];
+              if (!p.lines[i]) p.lines[i] = ["","","","",""];
+              if (p.lines[i].length === 4) p.lines[i].unshift(""); // 旧4列数据：前插空"状态"格
               while (p.lines[i].length < COLS) p.lines[i].push("");
             }
             data = { lines: p.lines };
@@ -321,13 +322,13 @@
           h += `<div class="row ${g.name}"><div class="row-label">${label}</div><div class="inputs">`;
           for (let c = 0; c < COLS; c++) {
             const v = (data.lines[r] && data.lines[r][c]) || "";
-            const ph = c===0?"时间":c===1?"内容描述":c===2?"综合情况":"回归情况";
-            const isUrl = c===3 && v.match(/^https?:\/\//);
-            const cls = (c===3 && isUrl)?"col-link":"";
+            const ph = c===0?"状态":c===1?"时间":c===2?"内容描述":c===3?"综合情况":"回归情况";
+            const isUrl = c===COLS-1 && v.match(/^https?:\/\//);
+            const cls = (c===COLS-1 && isUrl)?"col-link":"";
             h += `<div class="input-wrap"><div class="input-box"><input type="text" class="${cls}" value="${esc(v)}" data-r="${r}" data-c="${c}" oninput="edit(${r},${c},this.value)" placeholder="${ph}">`;
-            if (c===3) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
+            if (c===COLS-1) h += `<button class="open-link ${isUrl?'has-url':''}" onclick="window.open('${esc(v)}','_blank')" tabindex="-1">↗</button>`;
             h += `</div><button class="clear-btn" onclick="clearCell(${r},${c})" title="清空此格" tabindex="-1">✕</button>`;
-            if (c < 3) h += `<div class="col-handle" onpointerdown="startDrag(event,${c})" ondblclick="resetCols()" title="拖动调整列宽（双击重置）"></div>`;
+            if (c < COLS-1) h += `<div class="col-handle" onpointerdown="startDrag(event,${c})" ondblclick="resetCols()" title="拖动调整列宽（双击重置）"></div>`;
             h += `</div>`;
           }
           h += `</div></div>`;
@@ -343,13 +344,13 @@
     function loadColW() {
       try {
         const s = JSON.parse(localStorage.getItem(COLW_KEY));
-        if (Array.isArray(s) && s.length === 3 && s.every(x => typeof x === "number" && x > 0)) colW = s;
+        if (Array.isArray(s) && s.length === COLS-1 && s.every(x => typeof x === "number" && x > 0)) colW = s;
       } catch(e) {}
     }
     function defaultColW(W) {
-      const t = DEF_FR[0] + DEF_FR[1] + DEF_FR[2] + DEF_FR[3];
+      const t = DEF_FR.reduce((a, b) => a + b, 0);
       const avail = Math.max(W - 24, 240);
-      return [0,1,2].map(i => Math.max(40, Math.round(DEF_FR[i] / t * avail)));
+      return Array.from({length: COLS-1}, (_, i) => Math.max(40, Math.round(DEF_FR[i] / t * avail)));
     }
     function isMobile() { return window.matchMedia("(max-width: 700px)").matches; }
     function applyCols() {
@@ -363,7 +364,7 @@
         const maxSum = el.clientWidth - 90; // 给第4列留至少 90px
         const sum = w[0] + w[1] + w[2];
         if (sum > maxSum) { const k = maxSum / sum; w = w.map(x => Math.floor(x * k)); }
-        el.style.gridTemplateColumns = `${w[0]}px ${w[1]}px ${w[2]}px minmax(90px, 1fr)`;
+        el.style.gridTemplateColumns = `${w.join("px ")}px minmax(90px, 1fr)`;
       });
     }
     function startDrag(e, i) {
@@ -401,7 +402,7 @@
     loadColW();
 
     function edit(r, c, v) {
-      if (!data.lines[r]) data.lines[r] = ["","","",""];
+      if (!data.lines[r]) data.lines[r] = ["","","","",""];
       data.lines[r][c] = v;
       // Update open-link visibility
       const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
@@ -417,7 +418,7 @@
     }
 
     function clearCell(r, c) {
-      if (!data.lines[r]) data.lines[r] = ["","","",""];
+      if (!data.lines[r]) data.lines[r] = ["","","","",""];
       data.lines[r][c] = "";
       const input = document.querySelector(`input[data-r="${r}"][data-c="${c}"]`);
       if (input) {
