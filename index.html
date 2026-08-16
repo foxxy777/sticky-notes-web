@@ -178,6 +178,47 @@
       display: flex; align-items: center; justify-content: center;
       min-height: 50vh; color: var(--dim); font-size: 14px;
     }
+    /* Toast */
+    .toast {
+      position: fixed; left: 50%; bottom: 28px;
+      transform: translateX(-50%) translateY(8px);
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 300;
+      opacity: 0; pointer-events: none;
+      transition: opacity .25s, transform .25s;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    /* Snapshot viewer */
+    .modal.snap-modal { max-width: 960px; max-height: 88vh; overflow: auto; }
+    .snap-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .snap-head h2 { margin-bottom: 0; }
+    .snap-list { display: flex; flex-direction: column; gap: 6px; max-height: 38vh; overflow: auto; }
+    .snap-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--surface2);
+    }
+    .snap-item .meta { flex: 1; min-width: 0; }
+    .snap-item .time { font-size: 13px; font-weight: 600; }
+    .snap-item .count { font-size: 11px; color: var(--dim); margin-top: 2px; }
+    .snap-item .icon-btn { padding: 3px 9px; font-size: 12px; }
+    .snap-preview {
+      border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px;
+      max-height: 38vh; overflow: auto;
+    }
+    .snap-row { display: flex; gap: 6px; margin-bottom: 3px; align-items: stretch; }
+    .snap-row .row-label { width: 60px; flex-shrink: 0; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .snap-cells {
+      flex: 1; display: grid;
+      grid-template-columns: 0.6fr 1.2fr 3fr 1.5fr 1.5fr;
+      gap: 4px; min-width: 0;
+    }
+    .snap-cell {
+      background: var(--bg); border-radius: 4px; padding: 5px 8px;
+      font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .snap-empty { color: var(--dim); opacity: .4; }
   </style>
 </head>
 <body>
@@ -187,6 +228,8 @@
       <span class="dot"></span><span class="text">加载中...</span>
     </div>
     <button class="icon-btn" onclick="forceSave()">💾 保存</button>
+    <button class="icon-btn" onclick="takeSnapshot()">📸 存快照</button>
+    <button class="icon-btn" id="snapBtn" onclick="openSnaps()">🕘 快照</button>
     <button class="icon-btn" onclick="openSetup()">⚙️</button>
   </div>
   <div class="container" id="app">
@@ -203,6 +246,17 @@
       <div class="hint">Token 仅存于本地浏览器，不会上传到任何地方。</div>
     </div>
   </div>
+  <div class="toast" id="toast"></div>
+  <div class="overlay" id="snapOverlay" onclick="if(event.target===this)closeSnaps()">
+    <div class="modal snap-modal">
+      <div class="snap-head">
+        <h2>🕘 快照</h2>
+        <button class="icon-btn" onclick="closeSnaps()">✕ 关闭</button>
+      </div>
+      <div class="snap-list" id="snapList"></div>
+      <div class="snap-preview" id="snapPreview"></div>
+    </div>
+  </div>
   <script>
     const GIST_ID = "dd25f3f3146708c665989536b5797f1a";
     const TOKEN_KEY = "sticky_token_v1";
@@ -214,7 +268,7 @@
       { name: "wwdb", start: 5 },
       { name: "newdb", start: 10 }
     ];
-    let data = { lines: Array.from({length: ROWS}, () => ["","","","",""]) };
+    let data = { lines: Array.from({length: ROWS}, () => ["","","","",""]), snapshots: [] };
     let saveTimer = null;
     let undoStack = [], redoStack = [];
     let lastEdit = { r: -1, c: -1, t: 0 };
@@ -267,13 +321,19 @@
               if (p.lines[i].length === 4) p.lines[i].unshift(""); // 旧4列数据：前插空"状态"格
               while (p.lines[i].length < COLS) p.lines[i].push("");
             }
-            data = { lines: p.lines };
+            data = {
+              lines: p.lines,
+              snapshots: Array.isArray(p.snapshots)
+                ? p.snapshots.filter(s => s && Array.isArray(s.lines)).slice(0, 10)
+                : []
+            };
             undoStack = []; redoStack = []; lastEdit = { r: -1, c: -1, t: 0 };
           }
         } catch(e) { console.error("Parse error:", e); }
       }
       render();
       setStatus("saved");
+      updateSnapBtn();
     }
 
     async function saveGist() {
@@ -286,7 +346,7 @@
           headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             description: "Sticky Notes Data",
-            files: { "data.json": { content: JSON.stringify({ lines: data.lines }, null, 2) } }
+            files: { "data.json": { content: JSON.stringify({ lines: data.lines, snapshots: data.snapshots || [] }, null, 2) } }
           })
         });
         if (!r.ok) { const e = await r.json(); throw new Error(e.message || "HTTP " + r.status); }
@@ -461,6 +521,96 @@
       }
     }
 
+    /* ===== 快照 ===== */
+    const SNAP_MAX = 10;
+    let toastTimer = null;
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+    }
+    function takeSnapshot() {
+      if (!data.snapshots) data.snapshots = [];
+      data.snapshots.push({ t: Date.now(), lines: JSON.parse(JSON.stringify(data.lines)) });
+      while (data.snapshots.length > SNAP_MAX) data.snapshots.shift();
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      saveGist();
+      showToast("📸 快照已存（第 " + data.snapshots.length + " 格）");
+      updateSnapBtn();
+    }
+    function updateSnapBtn() {
+      const b = document.getElementById("snapBtn");
+      if (b) b.textContent = "🕘 快照" + ((data.snapshots && data.snapshots.length) ? " (" + data.snapshots.length + ")" : "");
+    }
+    function openSnaps() {
+      renderSnapList();
+      document.getElementById("snapOverlay").classList.add("show");
+    }
+    function closeSnaps() {
+      document.getElementById("snapOverlay").classList.remove("show");
+    }
+    function fmtT(t) {
+      return new Date(t).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    }
+    function renderSnapList() {
+      const list = document.getElementById("snapList");
+      document.getElementById("snapPreview").innerHTML = "";
+      if (!data.snapshots || !data.snapshots.length) {
+        list.innerHTML = '<div style="color:var(--dim);font-size:13px;padding:14px 0;text-align:center">暂无快照 — 点顶部「📸 存快照」创建</div>';
+        return;
+      }
+      let h = "";
+      for (let i = data.snapshots.length - 1; i >= 0; i--) {
+        const s = data.snapshots[i];
+        const filled = s.lines.filter(r => r && r.some(c => c)).length;
+        h += `<div class="snap-item"><div class="meta"><div class="time">#${i+1} · ${fmtT(s.t)}</div><div class="count">${filled} 行有内容</div></div>`
+          + `<button class="icon-btn" onclick="viewSnap(${i})">查看</button>`
+          + `<button class="icon-btn" onclick="restoreSnap(${i})">恢复</button>`
+          + `<button class="icon-btn" onclick="delSnap(${i})" title="删除">🗑</button></div>`;
+      }
+      list.innerHTML = h;
+    }
+    function viewSnap(i) {
+      const lines = data.snapshots[i].lines;
+      let h = "";
+      for (const g of GROUPS) {
+        h += `<div class="section-title" style="border-color:var(--${g.name});color:var(--${g.name})">${g.name.toUpperCase()}</div>`;
+        for (let k = 0; k < 5; k++) {
+          const r = g.start + k, row = lines[r] || [];
+          if (!row.some(c => c)) continue;
+          h += `<div class="snap-row"><div class="row-label" style="color:var(--${g.name})">${g.name}${k+1}</div><div class="snap-cells">`;
+          for (let c = 0; c < COLS; c++) h += `<div class="snap-cell">${esc(row[c] || "") || '<span class="snap-empty">·</span>'}</div>`;
+          h += `</div></div>`;
+        }
+      }
+      document.getElementById("snapPreview").innerHTML = h || '<div style="color:var(--dim);font-size:13px">（空快照）</div>';
+    }
+    function restoreSnap(i) {
+      undoStack.push(JSON.stringify(data.lines));
+      if (undoStack.length > 200) undoStack.shift();
+      redoStack.length = 0;
+      data.lines = JSON.parse(JSON.stringify(data.snapshots[i].lines));
+      for (let r = 0; r < ROWS; r++) {
+        if (!data.lines[r]) data.lines[r] = ["","","","",""];
+        while (data.lines[r].length < COLS) data.lines[r].push("");
+      }
+      lastEdit = { r: -1, c: -1, t: 0 };
+      render();
+      closeSnaps();
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      saveGist();
+      showToast("已恢复快照 #" + (i+1) + "（Ctrl+Z 可撤销）");
+    }
+    function delSnap(i) {
+      data.snapshots.splice(i, 1);
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+      saveGist();
+      renderSnapList();
+      updateSnapBtn();
+    }
+
     document.addEventListener("keydown", e => {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key === "s") { e.preventDefault(); forceSave(); }
@@ -469,6 +619,7 @@
         if (e.shiftKey) doRedo(); else doUndo();
       }
       if (mod && (e.key.toLowerCase() === "y" || e.code === "KeyY")) { e.preventDefault(); doRedo(); }
+      if (e.key === "Escape" && document.getElementById("snapOverlay").classList.contains("show")) closeSnaps();
     });
     document.getElementById("tokenInput").addEventListener("keydown", e => {
       if (e.key === "Enter") saveToken();
