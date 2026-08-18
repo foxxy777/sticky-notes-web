@@ -56,6 +56,8 @@
       border-radius: 6px; white-space: nowrap;
     }
     .icon-btn:hover { color: var(--text); border-color: var(--dim); }
+    .icon-btn:disabled { opacity: .35; cursor: default; }
+    .icon-btn:disabled:hover { color: var(--dim); border-color: var(--border); }
     .container { max-width: min(2400px, 96vw); margin: 0 auto; padding: 12px 16px; }
     .section { margin-bottom: 20px; }
     .section-title {
@@ -131,6 +133,10 @@
     }
     .row:hover .col-handle::after { opacity: .6; }
     .col-handle:hover::after, .col-handle.dragging::after { opacity: 1; background: var(--accent); }
+    @media (max-width: 760px) {
+      .header { flex-wrap: wrap; }
+      .status { order: 3; flex-basis: 100%; justify-content: flex-start; }
+    }
     @media (max-width: 700px) {
       .row { flex-direction: column; }
       .row-label { width: 100%; justify-content: flex-start; padding-left: 4px; height: 22px; }
@@ -307,6 +313,8 @@
     <div class="status" id="status">
       <span class="dot"></span><span class="text">加载中...</span>
     </div>
+    <button class="icon-btn" id="undoBtn" onclick="doUndo()" title="撤销 (Ctrl+Z)" disabled>↩ 撤销</button>
+    <button class="icon-btn" id="redoBtn" onclick="doRedo()" title="重做 (Ctrl+Shift+Z / Ctrl+Y)" disabled>↪ 重做</button>
     <button class="icon-btn" onclick="forceSave()">💾 保存</button>
     <button class="icon-btn" onclick="takeSnapshot()">📸 存快照</button>
     <button class="icon-btn" id="snapBtn" onclick="openSnaps()">🕘 快照</button>
@@ -428,6 +436,7 @@
       render();
       setStatus("saved");
       updateSnapBtn();
+      updateUndoBtns();
     }
 
     async function saveGist() {
@@ -569,12 +578,14 @@
       if (undoStack.length > 200) undoStack.shift();
       redoStack.length = 0;
       lastEdit = { r, c, t: now };
+      updateUndoBtns();
     }
     function applyState(s) {
       data.lines = JSON.parse(s);
       lastEdit = { r: -1, c: -1, t: 0 };
       render();
       debounceSave();
+      updateUndoBtns();
     }
     function doUndo() {
       if (!undoStack.length) return;
@@ -585,6 +596,12 @@
       if (!redoStack.length) return;
       undoStack.push(JSON.stringify(data.lines));
       applyState(redoStack.pop());
+    }
+    function updateUndoBtns() {
+      const u = document.getElementById("undoBtn");
+      const r = document.getElementById("redoBtn");
+      if (u) u.disabled = !undoStack.length;
+      if (r) r.disabled = !redoStack.length;
     }
 
     function edit(r, c, v) {
@@ -756,6 +773,7 @@
       }
       lastEdit = { r: -1, c: -1, t: 0 };
       render();
+      updateUndoBtns();
       closeSnaps();
       if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       saveGist();
