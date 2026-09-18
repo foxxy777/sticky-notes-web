@@ -65,7 +65,24 @@
       text-transform: uppercase; letter-spacing: 0.5px;
       margin-bottom: 6px; padding-left: 10px;
       border-left: 3px solid;
+      display: flex; align-items: center;
     }
+    .wipe-btn {
+      margin-left: 10px; background: none; border: 1px solid var(--border);
+      color: var(--dim); font-size: 11px; font-weight: 600;
+      padding: 2px 9px; border-radius: 5px; cursor: pointer;
+      opacity: .5; transition: opacity .15s, color .15s, border-color .15s;
+      text-transform: none; letter-spacing: 0;
+    }
+    .wipe-btn:hover { opacity: 1; color: var(--red); border-color: var(--red); }
+    .modal .btn-row { display: flex; gap: 8px; }
+    .modal .btn-row button { flex: 1; }
+    .modal .btn-cancel {
+      background: none; border: 1px solid var(--border); color: var(--dim);
+    }
+    .modal .btn-cancel:hover { color: var(--text); border-color: var(--dim); filter: none; }
+    .modal .btn-danger { background: var(--red); border: none; }
+    .modal .btn-danger:hover { filter: brightness(1.1); }
     .section.wwd .section-title { border-color: var(--wwd); color: var(--wwd); }
     .section.wwdb .section-title { border-color: var(--wwdb); color: var(--wwdb); }
     .section.newdb .section-title { border-color: var(--newdb); color: var(--newdb); }
@@ -335,6 +352,17 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+  <div class="overlay" id="wipeOverlay" onclick="if(event.target===this)closeWipe()">
+    <div class="modal">
+      <h2>🗑 清空确认</h2>
+      <p id="wipeMsg"></p>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closeWipe()">取消</button>
+        <button class="btn-danger" onclick="doWipe()">确认清空</button>
+      </div>
+      <div class="hint">误删可用 Ctrl+Z 撤销，或从 🕘 快照恢复。</div>
+    </div>
+  </div>
   <div class="overlay" id="snapOverlay" onclick="if(event.target===this)closeSnaps()">
     <div class="modal snap-modal">
       <div class="snap-body">
@@ -481,7 +509,7 @@
     function render() {
       let h = "";
       for (const g of GROUPS) {
-        h += `<div class="section ${g.name}"><div class="section-title">${g.name.toUpperCase()}</div>`;
+        h += `<div class="section ${g.name}"><div class="section-title">${g.name.toUpperCase()}<button class="wipe-btn" onclick="confirmWipe('${g.name}')" title="清空该区 5 行内容">🗑 清空</button></div>`;
         for (let i = 0; i < 5; i++) {
           const r = g.start + i;
           const label = `${g.name}${i+1}`;
@@ -619,6 +647,39 @@
         }
       }
       debounceSave();
+    }
+
+    /* ===== 分区清空 ===== */
+    let wipeTarget = null;
+    function confirmWipe(gname) {
+      const g = GROUPS.find(x => x.name === gname);
+      if (!g) return;
+      let filled = 0;
+      for (let i = 0; i < 5; i++) {
+        const row = data.lines[g.start + i] || [];
+        for (let c = 0; c < COLS; c++) if (row[c]) filled++;
+      }
+      if (!filled) { showToast(gname.toUpperCase() + " 区已是空的"); return; }
+      wipeTarget = g;
+      document.getElementById("wipeMsg").innerHTML =
+        `将清空 <b style="color:var(--${g.name})">${g.name.toUpperCase()}</b> 区全部 5 行（25 格）内容，确定吗？`;
+      document.getElementById("wipeOverlay").classList.add("show");
+    }
+    function closeWipe() {
+      document.getElementById("wipeOverlay").classList.remove("show");
+      wipeTarget = null;
+    }
+    function doWipe() {
+      if (!wipeTarget) return;
+      pushUndo(-1, -1);
+      for (let i = 0; i < 5; i++) {
+        if (data.lines[wipeTarget.start + i]) data.lines[wipeTarget.start + i] = ["","","","",""];
+      }
+      const name = wipeTarget.name.toUpperCase();
+      render();
+      debounceSave();
+      closeWipe();
+      showToast("已清空 " + name + "（Ctrl+Z 可撤销）");
     }
 
     function clearCell(r, c) {
@@ -788,7 +849,10 @@
         if (e.shiftKey) doRedo(); else doUndo();
       }
       if (mod && (e.key.toLowerCase() === "y" || e.code === "KeyY")) { e.preventDefault(); doRedo(); }
-      if (e.key === "Escape" && document.getElementById("snapOverlay").classList.contains("show")) closeSnaps();
+      if (e.key === "Escape") {
+        if (document.getElementById("snapOverlay").classList.contains("show")) closeSnaps();
+        if (document.getElementById("wipeOverlay").classList.contains("show")) closeWipe();
+      }
     });
     document.getElementById("tokenInput").addEventListener("keydown", e => {
       if (e.key === "Enter") saveToken();
